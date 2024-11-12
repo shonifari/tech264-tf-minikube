@@ -1,0 +1,39 @@
+---
+# SPARTA APP DEPLOYMENT
+apiVersion: apps/v1  # specify api to use for deployment
+kind : Deployment  # kind of service/object you want to create
+metadata:
+  name: app-deployment-1
+spec:
+  selector:
+    matchLabels:
+      app: sparta-app-1 # look for this labe/tag to match the k8n service
+
+  # Creaate a ReplicaSet with instances/pods
+  replicas: 5
+  template:
+    metadata:
+      labels:
+        app: sparta-app-1
+    spec:
+      containers:
+      - name: sparta-app-1
+        image:  shonifari8/sparta-app:v1
+        ports:
+        - containerPort: 3000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sparta-app-svc-1
+  namespace: default
+spec:
+  ports:
+  - nodePort: 30001
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: sparta-app-1  # Label to match service to deployment
+  type: NodePort
+  
