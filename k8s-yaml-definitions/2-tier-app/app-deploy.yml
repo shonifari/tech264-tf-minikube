@@ -1,0 +1,153 @@
+---
+# db-persistent-volume-claim.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-db-pvc
+  labels:
+    type: local
+spec:
+  volumeName: app-db-pv
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Mi
+
+---
+# db-persistent-volume.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: app-db-pv
+  labels:
+    type: local
+spec:
+  claimRef:
+    namespace: default
+    name: app-db-pvc
+  storageClassName: manual
+  capacity:
+    storage: 100Mi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/db
+
+---
+# DB DEPLOYMENT
+apiVersion: apps/v1  # specify api to use for deployment
+kind : Deployment  # kind of service/object you want to create
+metadata:
+  name: db-deployment 
+spec:
+  selector:
+    matchLabels:
+      app: sparta-app-db # look for this labe/tag to match the k8n service
+
+  # Creaate a ReplicaSet with instances/pods
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: sparta-app-db
+    spec:
+      containers:
+      - name: sparta-app-db
+        image: mongo:7.0.6
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - mountPath: /data/db
+          name: db-storage
+
+      volumes:
+      - name: db-storage
+        persistentVolumeClaim:
+          claimName: app-db-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sparta-app-db-svc
+  namespace: default
+spec:
+  ports:
+  - protocol: TCP
+    port: 27017
+    targetPort: 27017
+  selector:
+    app: sparta-app-db  # Label to match service to deployment
+  type: ClusterIP
+
+---
+# SPARTA APP DEPLOYMENT
+apiVersion: apps/v1  # specify api to use for deployment
+kind : Deployment  # kind of service/object you want to create
+metadata:
+  name: app-deployment 
+spec:
+  selector:
+    matchLabels:
+      app: sparta-app # look for this labe/tag to match the k8n service
+
+  # Creaate a ReplicaSet with instances/pods
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: sparta-app
+    spec:
+      containers:
+      - name: sparta-app
+        image:  shonifari8/sparta-app:v1
+        ports:
+        - containerPort: 3000
+        env:
+          - name: DB_HOST
+            value: mongodb://sparta-app-db-svc:27017/posts
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"   # Optional CPU limit
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: sparta-app-svc
+  namespace: default
+spec:
+  ports:
+  - nodePort: 30001
+    port: 3000
+    targetPort: 3000
+  selector:
+    app: sparta-app  # Label to match service to deployment
+  type: NodePort
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
